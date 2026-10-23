@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mini Juegos</title>
+  <meta name="description" content="Colección de mini juegos jugables en el navegador.">
+  <link rel="stylesheet" href="shared/base.css">
+  <style>
+    .hero { text-align: center; padding: 48px 0 24px; }
+    .hero h1 { font-size: clamp(2rem, 6vw, 3rem); margin: 0 0 8px; }
+    .hero p { color: var(--muted); margin: 0; }
+
+    .game-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      margin: 24px 0;
+    }
+    .game-card h2 { margin: 0 0 8px; font-size: 1.6rem; }
+    .game-card p { line-height: 1.6; }
+    .game-card ul { line-height: 1.8; padding-left: 20px; }
+
+    .demo { display: flex; gap: 6px; margin: 16px 0; flex-wrap: wrap; }
+    .demo span {
+      width: 44px; height: 44px; display: grid; place-items: center;
+      font-weight: 700; font-size: 1.3rem; color: #fff; border-radius: 4px;
+      background: var(--absent);
+    }
+    .demo .correct { background: var(--correct); }
+    .demo .present { background: var(--present); }
+
+    .play {
+      display: inline-block; margin-top: 8px; padding: 14px 32px;
+      background: var(--correct); color: #fff; text-decoration: none;
+      font-weight: 700; font-size: 1.1rem; border-radius: 999px;
+    }
+    .play:hover, .play:focus-visible { filter: brightness(1.1); }
+
+    footer { text-align: center; color: var(--muted); font-size: .85rem; padding: 32px 0; }
+  </style>
+</head>
+<body>
+  <main class="container">
+    <header class="hero">
+      <h1>Mini Juegos</h1>
+      <p>Pequeños juegos para el navegador. Sin instalar nada.</p>
+    </header>
+
+    <article class="game-card">
+      <h2>Wordle</h2>
+      <p>Adivina la palabra oculta de <strong>5 letras</strong> en <strong>6 intentos</strong>.
+        Después de cada intento, las casillas cambian de color para darte pistas:</p>
+
+      <div class="demo" aria-hidden="true">
+        <span class="correct">G</span><span>A</span><span class="present">T</span><span>O</span><span>S</span>
+      </div>
+
+      <ul>
+        <li><strong style="color:var(--correct)">Verde</strong>: la letra está en la palabra y en la posición correcta.</li>
+        <li><strong style="color:var(--present)">Amarillo</strong>: la letra está en la palabra, pero en otra posición.</li>
+        <li><strong>Gris</strong>: la letra no está en la palabra.</li>
+      </ul>
+      <p>Hay una <em>palabra del día</em>, igual para todos, y un modo libre para jugar todas las partidas que quieras.
+        Las tildes no cuentan, pero la Ñ sí.</p>
+
+      <a class="play" href="wordle/">Entrar</a>
+    </article>
+
+    <footer>Hecho con HTML, CSS y JavaScript.</footer>
+  </main>
+</body>
+</html>

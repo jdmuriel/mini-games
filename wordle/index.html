@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Wordle · Mini Juegos</title>
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <a class="icon-btn" href="../" aria-label="Volver al inicio">&larr;</a>
+      <h1>Wordle</h1>
+      <button class="icon-btn" id="stats-btn" type="button" aria-label="Estadísticas">&#9776;</button>
+    </header>
+
+    <nav class="modes" aria-label="Modo de juego">
+      <button type="button" data-mode="daily" class="mode">Palabra del día</button>
+      <button type="button" data-mode="free" class="mode">Modo libre</button>
+    </nav>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <main class="board-wrap">
+      <div id="board" class="board" aria-label="Tablero"></div>
+    </main>
+
+    <div id="keyboard" class="keyboard" aria-label="Teclado"></div>
+  </div>
+
+  <dialog id="stats" class="stats">
+    <h2 id="stats-title">Estadísticas</h2>
+    <p id="result-msg" class="result-msg"></p>
+    <div class="stat-row">
+      <div><strong id="s-played">0</strong><span>Jugadas</span></div>
+      <div><strong id="s-winpct">0</strong><span>% Victorias</span></div>
+      <div><strong id="s-streak">0</strong><span>Racha</span></div>
+      <div><strong id="s-best">0</strong><span>Mejor racha</span></div>
+    </div>
+    <h3>Distribución de intentos</h3>
+    <div id="dist" class="dist"></div>
+    <div class="stats-actions">
+      <button type="button" id="share-btn" class="btn">Compartir</button>
+      <button type="button" id="new-btn" class="btn primary">Nueva partida</button>
+    </div>
+    <form method="dialog"><button class="close" aria-label="Cerrar">&times;</button></form>
+  </dialog>
+
+  <script src="words.js"></script>
+  <script src="wordle.js"></script>
+</body>
+</html>
