@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Campaña 29-N · Mini Juegos</title>
+  <meta name="description" content="Simulador satírico de campaña electoral: 21 días, 350 escaños y ni una pizca de vergüenza.">
+  <link rel="stylesheet" href="../shared/base.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="barra" id="barra" hidden>
+      <button class="icono-btn" id="btn-menu" type="button" aria-label="Menú">&#9776;</button>
+      <div class="barra-dia" id="barra-dia"></div>
+      <div class="metros" id="metros"></div>
+      <button class="mano-btn" id="btn-mano" type="button" aria-label="Tu mano de cartas"></button>
+    </header>
+    <main class="pantalla" id="pantalla" aria-live="polite"></main>
+  </div>
+
+  <dialog id="modal" class="modal">
+    <form method="dialog"><button class="cerrar" aria-label="Cerrar">&times;</button></form>
+    <div id="modal-cuerpo"></div>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="data/partidos.js"></script>
+  <script src="data/regiones.js"></script>
+  <script src="data/mapa.js"></script>
+  <script src="data/cartas.js"></script>
+  <script src="motor.js"></script>
+  <script src="ui.js"></script>
+</body>
+</html>
