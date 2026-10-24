@@ -46,6 +46,13 @@ Hecho:
 - Candidatos con nombre real en la pantalla de elección y en los titulares; las bromas fuertes van contra
   "tu candidato"/"el nº2 de X", sin nombres.
 
+## Cómo probarlo
+
+- Rama publicada en GitHub Pages: `https://jdmuriel.github.io/mini-games/test/claude-minijuegos-brainstorm-lvxmg7/elecciones/`
+  (necesita la regla `claude/*` en el entorno github-pages, ver README).
+- Sin Pages: `https://raw.githack.com/jdmuriel/mini-games/claude/minijuegos-brainstorm-lvxmg7/elecciones/index.html`
+- En local: `python3 -m http.server 8000` y abrir `http://localhost:8000/elecciones/`.
+
 ## Registro de sesiones
 
 ### 2026-10-24 · Sesión 1

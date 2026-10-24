@@ -35,10 +35,25 @@ python3 -m http.server 8000
 
 ## Despliegue
 
-El workflow `.github/workflows/pages.yml` publica el repositorio en GitHub Pages en cada push a `main`
-(o manualmente desde la pestaña *Actions*).
+El workflow `.github/workflows/pages.yml` publica el sitio en GitHub Pages en cada push a `main`, a una rama
+de pruebas o al borrar una rama (o manualmente desde la pestaña *Actions*):
 
-Configuración inicial (una sola vez): *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+- `main` va a la raíz: `https://jdmuriel.github.io/mini-games/`
+- Cada rama `test/*` o `claude/*` va a `/test/<rama con guiones>/`, por ejemplo
+  `https://jdmuriel.github.io/mini-games/test/claude-minijuegos-brainstorm-lvxmg7/`.
+  En `/test/` hay un índice con todas.
+
+El sitio lo monta `.github/scripts/montar-sitio.sh` (se puede probar en local: `git fetch origin && bash
+.github/scripts/montar-sitio.sh /tmp/sitio`).
+
+Configuración inicial (una sola vez):
+
+1. *Settings → Pages → Build and deployment → Source: GitHub Actions*.
+2. Para que las ramas de pruebas puedan desplegar: *Settings → Environments → github-pages →
+   Deployment branches and tags*, añadir las reglas `test/*` y `claude/*`.
+
+Sin desplegar nada, una rama también se puede ver con raw.githack, por ejemplo
+`https://raw.githack.com/jdmuriel/mini-games/<rama>/elecciones/index.html`.
 
 Para equilibrar Campaña 29-N sin navegador:
 

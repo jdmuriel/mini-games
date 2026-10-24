@@ -1,8 +1,14 @@
 name: Deploy to GitHub Pages
 
+# Publica main en la raíz del sitio y cada rama de pruebas (test/* y claude/*) en /test/<rama>/,
+# con las barras del nombre cambiadas por guiones. /test/ tiene un índice con todas.
+# Para que una rama de pruebas pueda desplegar, el entorno github-pages tiene que permitirla:
+# Settings → Environments → github-pages → Deployment branches and tags (reglas test/* y claude/*).
+
 on:
   push:
-    branches: [main]
+    branches: [main, 'test/**', 'claude/**']
+  delete:
   workflow_dispatch:
 
 permissions:
@@ -22,9 +28,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Montar el sitio (main + ramas de pruebas)
+        run: bash .github/scripts/montar-sitio.sh _site
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: .
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v5
