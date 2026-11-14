@@ -9,6 +9,7 @@
   const RIDS = Object.keys(R);
   const JUG = D.JUGABLES;
   const TODOS = D.TODOS;
+  const ADJ = D.VECINAS;
 
   const CONFIG = {
     DIAS: 21,
@@ -41,7 +42,27 @@
     OLVIDO: 0.008,
     CRISTALIZA: 0.012,
     CARTAS_DIA: 2,
-    MANO_MAX: 5,
+    MANO_MAX: 6,
+    AVION: 12,
+    CENSO_EXP: 0.5,
+    CENSO_MIN: 0.5,
+    CENSO_MAX: 2.0,
+    PUERTA: 0.55,
+    CENA_MITIN: 0.2,
+    MASAS_MITIN: 0.35,
+    CENA_CAJA: [5, 7],
+    MASAS_ANIMO: [2, 6],
+    N2_CAJA: 3,
+    IA_CARAVANA: 0.75,
+    DUELO_GANA: 1.35,
+    DUELO_PIERDE: 0.6,
+    FOCOS_DIA: 2,
+    PROMESAS_UMBRAL: 50000,
+    PROMESAS_DIV: 150000,
+    PROMESAS_MAX: 0.7,
+    PROMESAS_DEBATE: 80000,
+    PROMESAS_CLARAS: 15000,
+    VISTA: 0.35,
     MET_INICIO: { caja: 50, animo: 60, sospecha: 25 },
     CAJA_NOCHE: 4,
     ANIMO_NOCHE: -1,
@@ -97,6 +118,12 @@
     const v = R[c].v2023;
     DER[c] = (v.pp + v.vox) / (v.pp + v.vox + v.psoe + v.fa);
   });
+  // Un acto llega a un número parecido de personas en cualquier sitio: mueve más puntos en una comunidad
+  // pequeña que en una grande. cercania = (censo medio / censo)^0,5, entre 0,5 y 2.
+  const CERCANIA = {};
+  RIDS.forEach((c) => {
+    CERCANIA[c] = clamp(Math.pow(CENSO_TOTAL / RIDS.length / R[c].censo, CONFIG.CENSO_EXP), CONFIG.CENSO_MIN, CONFIG.CENSO_MAX);
+  });
   const DER_NAT = RIDS.reduce((s, c) => s + DER[c] * R[c].censo, 0) / CENSO_TOTAL;
 
   // ---------- Partida nueva ----------
@@ -128,7 +155,7 @@
 
   function nuevaPartida(opts) {
     const S = {
-      version: 1,
+      version: 2,
       rng: (opts.semilla >>> 0) || ((Date.now() ^ (Math.random() * 1e9)) >>> 0),
       jugador: opts.partido,
       escenario: opts.escenario,
@@ -146,7 +173,15 @@
       cola: [],
       flags: {},
       mitines: [],
-      agenda: { principal: null, secundario: null },
+      agenda: { ca: null, acto: 'mitin', tactica: null },
+      pos: 'mad',
+      orden: 'atacar',
+      focos: [],
+      citas: [],
+      plan: null,
+      ultimo: null,
+      vistas: opts.vistas || [],
+      stats: { aviones: 0, quieto: 0, duelosG: 0, duelosP: 0, actos: { mitin: 0, puerta: 0, cena: 0, masas: 0 }, visitadas: {} },
       noticias: [],
       historia: [],
       hoy: null,
@@ -161,6 +196,8 @@
       JUG.forEach((p) => { ultimo[p] = 0; });
       S.reg[c] = { v: v[c], ultimo };
     });
+    const ini = D.TACTICAS_INICIO.slice();
+    for (let i = 0; i < 2; i++) S.mano.push(ini.splice(Math.floor(rnd(S) * ini.length), 1)[0]);
     S.escInicio = escanos(S).total;
     S.historia.push({ dia: 0, esc: S.escInicio, est: estimacion(S) });
     const e = D.ESCENARIOS[S.escenario];
@@ -390,10 +427,14 @@
       ['caja', 'animo', 'sospecha'].forEach((k) => {
         if (e[k]) S.met[k] = clamp(S.met[k] + e[k], 0, 100);
       });
-      if (e.promesa) S.promesas += e.promesa;
+      if (e.promesa) S.promesas = Math.max(0, S.promesas + e.promesa);
       if (e.mano) anadirMano(S, e.mano);
       if (e.flag) S.flags[e.flag] = true;
-      if (e.sigue) S.cola.push(e.sigue);
+      if (e.sigue) S.cola.push({ id: e.sigue, dia: S.dia + (e.en || 1) });
+      if (e.cita && ctx && ctx.ca) {
+        S.citas.push({ ca: ctx.ca, dia: S.dia, nombre: texto(S, e.cita.nombre, ctx), icono: e.cita.icono || '📌',
+          ef: e.cita.ef || [], efNo: e.cita.efNo || [], res: texto(S, e.cita.res, ctx), resNo: texto(S, e.cita.resNo, ctx), ctx });
+      }
       if (e.campana) {
         S.campanas.push({ nombre: texto(S, e.campana.nombre, ctx), quedan: e.campana.dias, ef: e.campana.ef, ctx });
       }
@@ -411,6 +452,7 @@
 
   function cartaMano(id) {
     return D.CARTAS_DEBATE[id] ? Object.assign({ id, clase: 'debate' }, D.CARTAS_DEBATE[id])
+      : D.TACTICAS[id] ? Object.assign({ id, clase: 'tactica' }, D.TACTICAS[id])
       : Object.assign({ id, clase: 'reflexion' }, D.CARTAS_REFLEXION[id]);
   }
 
@@ -449,8 +491,25 @@
     if (c.solo && c.solo.indexOf(S.jugador) < 0) return false;
     if (c.no && c.no.indexOf(S.jugador) >= 0) return false;
     if (c.dias && (S.dia < c.dias[0] || S.dia > c.dias[1])) return false;
-    if (c.req && !c.req(S)) return false;
+    if (c.req && !c.req(info(S))) return false;
     return true;
+  }
+
+  // Resumen de la partida para las cartas reactivas (req).
+  function info(S) {
+    if (S._info && S._info.dia === S.dia) return S._info;
+    const esc = escanos(S).total, yo = S.jugador;
+    const orden = JUG.slice().sort((a, b) => esc[b] - esc[a]);
+    const i = {
+      dia: S.dia, yo, esc, puesto: orden.indexOf(yo) + 1, delta: esc[yo] - S.escInicio[yo],
+      caja: S.met.caja, animo: S.met.animo, sospecha: S.met.sospecha, promesas: S.promesas,
+      mano: S.mano.length, pos: S.pos, quieto: S.stats.quieto, aviones: S.stats.aviones,
+      actos: S.stats.actos, duelosG: S.stats.duelosG, duelosP: S.stats.duelosP,
+      visitadas: Object.keys(S.stats.visitadas).length, orden: S.orden, flags: S.flags, usadas: S.usadas,
+      ayer: S.ultimo ? S.ultimo.acto : null,
+    };
+    Object.defineProperty(S, '_info', { value: i, enumerable: false, configurable: true, writable: true });
+    return i;
   }
 
   function contextoCarta(S, c) {
@@ -466,7 +525,9 @@
     } else {
       ctx.obj = c.obj;
     }
-    if (c.ca === 'azar') {
+    if (c.ca === 'pos') {
+      ctx.ca = S.pos;
+    } else if (c.ca === 'azar') {
       ctx.ca = elegirPeso(S, RIDS, (r) => Math.sqrt(R[r].escanos));
     } else if (c.ca === 'gobpp') {
       ctx.ca = elegirPeso(S, RIDS.filter((r) => R[r].gob === 'pp'), (r) => Math.sqrt(R[r].escanos));
@@ -488,18 +549,29 @@
       if (!c || lista.some((x) => x.id === c.id)) return;
       lista.push({ id: c.id, ctx: contextoCarta(S, c), hecha: false, resultado: null });
     };
+    S.focos = [];
+    S.plan = null;
+    S.citas = [];
     if (S.dia === CONFIG.DIA_REFLEXION) {
       S.hoy = { cartas: [], idx: 0 };
       return;
     }
+    prepararMapa(S);
     D.CARTAS.filter((c) => c.dia === S.dia && cumple(S, c)).forEach(usar);
-    while (S.cola.length) usar(buscarCarta(S.cola.shift()));
+    const pendientes = [];
+    S.cola.forEach((x) => {
+      if (typeof x === 'string') x = { id: x, dia: S.dia };
+      if (x.dia <= S.dia && lista.length < CONFIG.CARTAS_DIA + 1) usar(buscarCarta(x.id));
+      else pendientes.push(x);
+    });
+    S.cola = pendientes;
+    const vistas = S.vistas || [];
     const max = Math.max(CONFIG.CARTAS_DIA, lista.length);
     let intentos = 0;
     while (lista.length < max && intentos++ < 50) {
       const pool = D.CARTAS.filter((c) => !c.dia && !c.encadenada && !S.usadas[c.id] && cumple(S, c) &&
         !lista.some((x) => x.id === c.id));
-      const c = elegirPeso(S, pool, (x) => x.peso || 1);
+      const c = elegirPeso(S, pool, (x) => (x.peso || 1) * (x.req ? 2.5 : 1) * (vistas.indexOf(x.id) >= 0 ? CONFIG.VISTA : 1));
       if (!c) break;
       usar(c);
     }
@@ -518,8 +590,14 @@
     return c;
   }
 
+  // Si no puedes pagar ninguna de las dos opciones, se permite la más barata (y te quedas a cero).
   function puedeElegir(S, op) {
-    return S.met.caja >= costeOpcion(op);
+    if (S.met.caja >= costeOpcion(op)) return true;
+    const cur = cartaActual(S);
+    if (!cur) return false;
+    const ca = costeOpcion(cur.def.a), cb = costeOpcion(cur.def.b);
+    if (S.met.caja >= ca || S.met.caja >= cb) return false;
+    return costeOpcion(op) === Math.min(ca, cb);
   }
 
   // Medidores que toca una opción (para los puntitos estilo Reigns).
@@ -528,7 +606,7 @@
     const mirar = (efs) => (efs || []).forEach((e) => {
       ['caja', 'animo', 'sospecha'].forEach((k) => { if (e[k]) m[k] = Math.max(m[k] || 0, Math.abs(e[k])); });
       if (e.mov || e.tras || e.bloque) m.votos = Math.max(m.votos || 0, Math.abs(e.n) * 20);
-      if (e.huelga || e.campana) m.votos = Math.max(m.votos || 0, 12);
+      if (e.huelga || e.campana || e.cita) m.votos = Math.max(m.votos || 0, 12);
     });
     mirar(op.ef);
     if (op.si) mirar(op.si.ef);
@@ -589,7 +667,7 @@
     let n = 0;
     S.mitines.forEach((m) => {
       if (m.p === p && m.ca === c && m.dia < S.dia && m.dia >= S.dia - CONFIG.HASTIO_DIAS) {
-        n += m.rol === 'principal' ? 1 : 0.5;
+        n += m.rol === 'principal' && (!m.acto || m.acto === 'mitin' || m.acto === 'puerta') ? 1 : 0.5;
       }
     });
     return Math.max(CONFIG.HASTIO_MIN, 1 - CONFIG.HASTIO * n);
@@ -615,8 +693,8 @@
         if (m.dia === S.dia - 1 && m.ca === c && m.p !== p) rivalesAyer += m.rol === 'principal' ? 0.5 : 0.25;
       });
     }
-    const g = CONFIG.MITIN * implantacion(S, p, c) * hastio(S, p, c) / (1 + CONFIG.ATENCION * rivalesAyer);
-    const combustible = Math.min(1, (v.ind + 0.3 * P[p].vecinos.reduce((s, q) => s + v[q], 0)) / 8);
+    const g = CONFIG.MITIN * CERCANIA[c] * implantacion(S, p, c) * hastio(S, p, c) / (1 + CONFIG.ATENCION * rivalesAyer);
+    const combustible = Math.min(1, v.ind / Math.max(2, g * 1.5));
     const enfriando = S.dia - S.reg[c].ultimo[p] >= CONFIG.OLVIDO_DIAS - 1 ? 1.2 : 1;
     return R[c].escanos * g * combustible * enfriando / dec;
   }
@@ -626,6 +704,8 @@
     RIDS.forEach((c) => {
       val[c] = valorMitin(S, p, c) * (P[p].sesgo[c] || 1) * entre(S, 0.75, 1.25);
       if (S.dia === CONFIG.DIA_CIERRE) val[c] *= 1 + R[c].escanos / 30;
+      const antes = S.posIA && S.posIA[p];
+      if (antes && antes !== c && ADJ[antes].indexOf(c) < 0) val[c] *= CONFIG.IA_CARAVANA;
     });
     const orden = RIDS.slice().sort((a, b) => val[b] - val[a]);
     let principal = orden[0];
@@ -638,27 +718,227 @@
     return { principal, secundario };
   }
 
-  function resolverMitines(S, agendas) {
-    const lista = [];
-    Object.keys(agendas).forEach((p) => {
-      const a = agendas[p];
-      if (a.principal) lista.push({ p, ca: a.principal, rol: 'principal' });
-      if (a.secundario) lista.push({ p, ca: a.secundario, rol: 'secundario', mismo: a.secundario === a.principal });
+  // ---------- La gira: caravana, actos, sucesos del mapa y filtraciones ----------
+
+  function alcance(S, c) {
+    if (!S.pos || S.pos === c) return 'aqui';
+    return ADJ[S.pos].indexOf(c) >= 0 ? 'vecina' : 'avion';
+  }
+
+  function focoEn(S, c) {
+    const f = (S.focos || []).find((x) => x.ca === c);
+    return f ? Object.assign({ tipo: f.tipo, ca: c }, D.FOCOS[f.tipo]) : null;
+  }
+
+  function citaEn(S, c) {
+    return (S.citas || []).find((x) => x.ca === c && x.dia === S.dia) || null;
+  }
+
+  function costeViaje(S, c, tactica) {
+    const T = tactica ? D.TACTICAS[tactica] : null;
+    if (T && T.vueloGratis) return 0;
+    const al = alcance(S, c);
+    if (al === 'avion') return CONFIG.AVION;
+    const F = focoEn(S, c);
+    if (al === 'vecina' && F && F.soloAvion) return CONFIG.AVION;
+    return 0;
+  }
+
+  function puedeIr(S, c, tactica) {
+    return S.met.caja >= costeViaje(S, c, tactica);
+  }
+
+  // Cada mañana: los rivales fijan su agenda (y se filtra la de uno o dos) y aparecen los sucesos del mapa.
+  function prepararMapa(S) {
+    const yo = S.jugador;
+    const agendas = {};
+    JUG.forEach((p) => { if (p !== yo) agendas[p] = agendaIA(S, p); });
+    const rivales = JUG.filter((p) => p !== yo);
+    const filtradas = [];
+    const n = 1 + (rnd(S) < 0.5 ? 1 : 0);
+    const bolsa = rivales.slice();
+    for (let i = 0; i < n; i++) filtradas.push(bolsa.splice(Math.floor(rnd(S) * bolsa.length), 1)[0]);
+    S.plan = { agendas, filtradas };
+    const tipos = Object.keys(D.FOCOS);
+    const libres = RIDS.slice();
+    S.focos = [];
+    for (let i = 0; i < CONFIG.FOCOS_DIA; i++) {
+      const tipo = elegirPeso(S, tipos.filter((t) => !S.focos.some((x) => x.tipo === t)), (t) => D.FOCOS[t].peso || 1);
+      const ca = elegirPeso(S, libres, (c) => 1 + Math.sqrt(R[c].escanos) / 3);
+      libres.splice(libres.indexOf(ca), 1);
+      S.focos.push({ tipo, ca });
+    }
+  }
+
+  // Dónde manda hoy la orden permanente al nº2 (sin azar, para poder enseñarlo antes de cerrar el día).
+  function destinoN2(S) {
+    const yo = S.jugador;
+    if (S.orden === 'recaudar') return null;
+    let mejor = null, mv = -Infinity;
+    RIDS.forEach((c) => {
+      if (c === S.agenda.ca) return;
+      let v;
+      if (S.orden === 'defender') {
+        const vv = S.reg[c].v;
+        const frio = S.dia - S.reg[c].ultimo[yo] >= CONFIG.OLVIDO_DIAS - 1 ? 3 : 1;
+        v = R[c].escanos * vv[yo] / (100 - vv.ind) * frio * Math.max(0.1, hastio(S, yo, c));
+      } else {
+        v = valorMitin(S, yo, c);
+      }
+      if (v > mv) { mv = v; mejor = c; }
     });
+    return mejor;
+  }
+
+  // Multiplicadores del suceso del mapa y de la carta táctica sobre el acto del candidato.
+  function modificadores(S, c, acto, tactica) {
+    const F = focoEn(S, c);
+    const T = tactica ? D.TACTICAS[tactica] : null;
+    let k = 1, riesgo = null;
+    if (F) {
+      if (F.mult && F.mult[acto]) k *= F.mult[acto];
+      if (F.multAnimo && F.multAnimo.acto === acto) k *= S.met.animo >= F.multAnimo.min ? F.multAnimo.si : F.multAnimo.no;
+      if (F.riesgo && F.riesgo.acto === acto) riesgo = F.riesgo;
+    }
+    if (T && T.mult && T.mult[acto]) k *= T.mult[acto];
+    return { F, T, k, riesgo };
+  }
+
+  // Puntos (sin azar) que da el acto del candidato del jugador en c. rivales: presencia conocida de rivales.
+  function baseActo(S, p, c, acto, o) {
+    o = o || {};
+    let h = hastio(S, p, c);
+    if (o.sinHastio) h = Math.max(h, 1);
+    const base = CONFIG.MITIN * CERCANIA[c] * (o.rol == null ? 1 : o.rol) * implantacion(S, p, c) * factorAnimo(S, p);
+    let g;
+    if (acto === 'puerta') g = base * CONFIG.PUERTA * Math.max(h, 0.3);
+    else if (acto === 'cena') g = base * CONFIG.CENA_MITIN * Math.max(h, 0);
+    else if (acto === 'masas') g = base * CONFIG.MASAS_MITIN * Math.max(h, 0);
+    else g = base * h / (1 + CONFIG.ATENCION * (o.rivales || 0));
+    if (S.dia === CONFIG.DIA_CIERRE) g *= CONFIG.CIERRE;
+    return g;
+  }
+
+  function cajaCena(S, c, mods) {
+    let k = (mods.F && mods.F.cajaX) || 1;
+    if (mods.T && mods.T.cajaX) k *= mods.T.cajaX;
+    return Math.round((CONFIG.CENA_CAJA[0] + CONFIG.CENA_CAJA[1] * implantacion(S, S.jugador, c)) * k);
+  }
+
+  function animoMasas(S, c, mods) {
+    return Math.round((CONFIG.MASAS_ANIMO[0] + CONFIG.MASAS_ANIMO[1] * implantacion(S, S.jugador, c)) * Math.min(2, mods.k));
+  }
+
+  // Cuántos escaños cambia el partido p en c si gana n puntos (de indecisos o, puerta a puerta, de los vecinos).
+  function escanosSi(S, p, c, n, deVecinos) {
+    const v = Object.assign({}, S.reg[c].v);
+    const antes = repartir(v, R[c].escanos)[p];
+    if (n >= 0 && deVecinos) {
+      const vec = P[p].vecinos;
+      const tv = vec.reduce((s, q) => s + v[q], 0) || 1;
+      vec.forEach((q) => { const m = Math.min(n * v[q] / tv, Math.max(0, v[q] - 0.1)); v[q] -= m; v[p] += m; });
+    } else if (n >= 0) {
+      const m = Math.min(n, Math.max(0, v.ind - 0.1)); v.ind -= m; v[p] += m;
+    } else {
+      const m = Math.min(-n, Math.max(0, v[p] - 0.1)); v[p] -= m; v.ind += m;
+    }
+    return repartir(v, R[c].escanos)[p] - antes;
+  }
+
+  // Escaños en juego: cuántos puntos te faltan para el siguiente escaño y cuántos te separan de perder uno.
+  function umbral(S, c, p) {
+    p = p || S.jugador;
+    let sube = null, baja = null;
+    for (let x = 0.1; x <= 3.001 && sube === null; x += 0.1) if (escanosSi(S, p, c, x) > 0) sube = r1(x);
+    for (let x = 0.1; x <= 3.001 && baja === null; x += 0.1) if (escanosSi(S, p, c, -x) < 0) baja = r1(x);
+    return { sube, baja };
+  }
+
+  // Previsión para la interfaz: qué daría hoy el acto en c (sin contar el azar ni los rivales ocultos).
+  function prever(S, c, acto, tactica) {
+    const yo = S.jugador;
+    const mods = modificadores(S, c, acto, tactica);
+    const T = mods.T;
+    let rivales = 0;
+    const visibles = [];
+    if (S.plan) S.plan.filtradas.forEach((p) => { if (S.plan.agendas[p].principal === c) { rivales += 1; visibles.push(p); } });
+    if ((T && T.sinRuido) || (mods.F && mods.F.sinRuido)) rivales = 0;
+    let g = baseActo(S, yo, c, acto, { rivales, sinHastio: T && T.sinHastio }) * mods.k;
+    if (S.dia === CONFIG.DIA_CIERRE && S.flags.concierto && acto === 'mitin') g *= 1.3;
+    const v = S.reg[c].v;
+    if (acto !== 'puerta') g = Math.min(g, Math.max(0, v.ind - 0.1));
+    let extra = (T && T.plano ? T.plano * tamano(S, yo) : 0);
+    if (mods.F && mods.F.voy) mods.F.voy.forEach((e) => { if (e.mov === 'yo') extra += e.n * tamano(S, yo); });
+    if (mods.F && mods.F.castigo && mods.F.castigo[acto]) extra += mods.F.castigo[acto] * tamano(S, yo);
+    const total = g + extra;
+    return {
+      g: total, escanos: escanosSi(S, yo, c, total, acto === 'puerta'), coste: costeViaje(S, c, tactica),
+      caja: acto === 'cena' ? cajaCena(S, c, mods) : 0, animo: acto === 'masas' ? animoMasas(S, c, mods) : 0,
+      riesgo: mods.riesgo, duelo: acto === 'mitin' ? visibles : [], hastio: hastio(S, yo, c), foco: mods.F,
+    };
+  }
+
+  function usarTacticaYa(S, id) {
+    const T = D.TACTICAS[id];
+    const i = S.mano.indexOf(id);
+    if (!T || i < 0 || !T.espia || !S.plan) return false;
+    S.mano.splice(i, 1);
+    S.plan.filtradas = JUG.filter((p) => p !== S.jugador);
+    return true;
+  }
+
+  function resolverMitines(S, agendas) {
+    const yo = S.jugador;
+    const lista = [];
+    JUG.forEach((p) => {
+      const a = agendas[p];
+      if (!a) return;
+      if (a.principal) lista.push({ p, ca: a.principal, rol: 'principal', acto: a.acto || 'mitin', tactica: a.tactica || null });
+      if (a.secundario) lista.push({ p, ca: a.secundario, rol: 'secundario', acto: 'mitin', mismo: a.secundario === a.principal });
+    });
+    const mio = lista.find((m) => m.p === yo && m.rol === 'principal');
+    const mods = mio ? modificadores(S, mio.ca, mio.acto, mio.tactica) : { k: 1 };
+    // Duelos por la tele: tu mitin contra el mitin principal de un rival en la misma comunidad.
+    const duelos = {};
+    if (mio && mio.acto === 'mitin') {
+      lista.forEach((m) => {
+        if (m.p === yo || m.rol !== 'principal' || m.ca !== mio.ca) return;
+        // No depende del tamaño del partido (regla de simetría): ánimo, azar y cartas tácticas.
+        const fy = factorAnimo(S, yo) * entre(S, 0.6, 1.4) * ((mods.T && mods.T.duelo) || 1);
+        const fr = entre(S, 0.6, 1.4);
+        duelos[m.p] = fy >= fr;
+      });
+    }
     const presencia = {};
     lista.forEach((m) => {
+      if (m.acto !== 'mitin') return;
       presencia[m.ca] = presencia[m.ca] || {};
       presencia[m.ca][m.p] = (presencia[m.ca][m.p] || 0) + (m.rol === 'principal' ? 1 : 0.5);
     });
     lista.forEach((m) => {
+      const esMio = m === mio;
       const rol = m.rol === 'principal' ? CONFIG.ROL.principal : (m.mismo ? CONFIG.ROL.mismoSitio : CONFIG.ROL.secundario);
       let rivales = 0;
-      Object.keys(presencia[m.ca]).forEach((q) => { if (q !== m.p) rivales += presencia[m.ca][q]; });
-      let g = CONFIG.MITIN * rol * implantacion(S, m.p, m.ca) * factorAnimo(S, m.p) * hastio(S, m.p, m.ca) /
-        (1 + CONFIG.ATENCION * rivales) * entre(S, 0.8, 1.2);
-      if (S.dia === CONFIG.DIA_CIERRE) {
-        g *= CONFIG.CIERRE;
-        if (m.p === S.jugador && S.flags.concierto) g *= 1.3;
+      Object.keys(presencia[m.ca] || {}).forEach((q) => {
+        if (q === m.p) return;
+        if (esMio && duelos[q] === true) return; // le has quitado la tele
+        if (m.p !== yo && m.rol === 'principal' && q === yo && duelos[m.p] === false) return;
+        rivales += presencia[m.ca][q];
+      });
+      const sinRuido = esMio && ((mods.T && mods.T.sinRuido) || (mods.F && mods.F.sinRuido));
+      let g = baseActo(S, m.p, m.ca, m.acto, { rol, rivales: sinRuido ? 0 : rivales, sinHastio: esMio && mods.T && mods.T.sinHastio }) *
+        entre(S, 0.8, 1.2);
+      if (S.dia === CONFIG.DIA_CIERRE && m.p === yo && m.rol === 'principal' && m.acto === 'mitin' && S.flags.concierto) g *= 1.3;
+      if (esMio) {
+        g *= mods.k;
+        if (mods.riesgo) {
+          m.riesgoOk = rnd(S) < mods.riesgo.p;
+          if (m.riesgoOk) g *= mods.riesgo.mult;
+          else g = mods.riesgo.mal * tamano(S, yo);
+        }
+        Object.keys(duelos).forEach((q) => { g *= g > 0 ? (duelos[q] ? CONFIG.DUELO_GANA : CONFIG.DUELO_PIERDE) : 1; });
+      } else if (m.rol === 'principal' && duelos[m.p] != null) {
+        g *= g > 0 ? (duelos[m.p] ? CONFIG.DUELO_PIERDE : 1.2) : 1;
       }
       m.g = g;
       m.hastio = hastio(S, m.p, m.ca);
@@ -666,32 +946,81 @@
     });
     lista.forEach((m) => {
       const c = m.ca;
-      if (m.g >= 0) {
-        let resto = m.g - mover(S, c, 'ind', m.p, m.g * CONFIG.DE_INDECISOS);
+      const antes = S.reg[c].v[m.p];
+      if (m.g >= 0 && m.acto === 'puerta') {
         const vec = P[m.p].vecinos;
         const tv = vec.reduce((s, q) => s + S.reg[c].v[q], 0) || 1;
-        vec.forEach((q) => { mover(S, c, q, m.p, resto * S.reg[c].v[q] / tv); });
+        const partes = vec.map((q) => m.g * S.reg[c].v[q] / tv);
+        vec.forEach((q, i) => { mover(S, c, q, m.p, partes[i]); });
+      } else if (m.g >= 0) {
+        mover(S, c, 'ind', m.p, m.g);
       } else {
         mover(S, c, m.p, 'ind', -m.g);
       }
+      m.real = S.reg[c].v[m.p] - antes;
       S.reg[c].ultimo[m.p] = S.dia;
-      S.mitines.push({ dia: S.dia, p: m.p, ca: c, rol: m.rol, g: r1(m.g * 100) / 100 });
+      S.mitines.push({ dia: S.dia, p: m.p, ca: c, rol: m.rol, acto: m.acto, g: Math.round(m.g * 100) / 100 });
     });
+    // Efectos propios del acto, del suceso del mapa y de la carta táctica del jugador.
+    if (mio) {
+      const c = mio.ca, ctx = { ca: c, obj: P[yo].antagonista };
+      if (mio.acto === 'cena') { mio.caja = cajaCena(S, c, mods); S.met.caja = clamp(S.met.caja + mio.caja, 0, 100); S.met.sospecha = clamp(S.met.sospecha + 1, 0, 100); }
+      if (mio.acto === 'masas') { mio.animo = animoMasas(S, c, mods); S.met.animo = clamp(S.met.animo + mio.animo, 0, 100); }
+      if (mods.F) {
+        if (mods.F.voy) aplicarEfectos(S, mods.F.voy, ctx);
+        if (mods.F.castigo && mods.F.castigo[mio.acto]) movilizar(S, yo, mods.F.castigo[mio.acto], c);
+        mio.foco = mods.F.tipo;
+      }
+      if (mods.T) {
+        if (mods.T.plano) movilizar(S, yo, mods.T.plano, c);
+        ['caja', 'animo', 'sospecha'].forEach((k) => { if (mods.T[k]) S.met[k] = clamp(S.met[k] + mods.T[k], 0, 100); });
+        const i = S.mano.indexOf(mio.tactica);
+        if (i >= 0) S.mano.splice(i, 1);
+      }
+      mio.duelos = duelos;
+      Object.keys(duelos).forEach((q) => { if (duelos[q]) S.stats.duelosG++; else S.stats.duelosP++; });
+    }
     return lista;
   }
 
   function cronicaMitines(S, lista) {
     const yo = S.jugador;
-    lista.filter((m) => m.rol === 'principal').forEach((m) => {
-      const organiza = Math.max(300, Math.round((m.g * 6000 + entre(S, 500, 3000)) / 100) * 100);
+    const mio = lista.find((m) => m.p === yo && m.rol === 'principal');
+    if (mio) {
+      const A = D.ACTOS[mio.acto];
+      const organiza = Math.max(300, Math.round((Math.max(0, mio.g) * 6000 + entre(S, 500, 3000)) / 100) * 100);
       const policia = Math.max(20, Math.round(organiza / entre(S, 6, 14) / 10) * 10);
-      const quienEs = m.p === yo ? 'Tu candidato' : P[m.p].candCorto;
-      let txt = quienEs + ' en ' + R[m.ca].nombre + ': ' + organiza.toLocaleString('es-ES') +
-        ' asistentes según la organización, ' + policia.toLocaleString('es-ES') + ' según la policía.';
-      if (m.hastio <= 0) txt += ' «¿Otra vez aquí?», se oye entre el público.';
-      else if (m.rivales >= 2) txt += ' Con tanto mitin a la vez, la tele no sabe a quién enfocar.';
-      noticia(S, m.p === yo ? 3 : 1.5 + m.g, m.p === yo ? 'Mitin en ' + R[m.ca].nombre : P[m.p].candCorto + ' llena ' + R[m.ca].nombre, txt, m.p);
-    });
+      let txt;
+      if (mio.acto === 'mitin') {
+        txt = 'Tu candidato en ' + R[mio.ca].nombre + ': ' + organiza.toLocaleString('es-ES') + ' asistentes según la organización, ' +
+          policia.toLocaleString('es-ES') + ' según la policía.';
+        if (mio.hastio <= 0) txt += ' «¿Otra vez aquí?», se oye entre el público.';
+      } else if (mio.acto === 'puerta') {
+        txt = 'Tu candidato llama a ' + Math.round(organiza / 20) + ' timbres en ' + R[mio.ca].nombre + '. Le abren ' + Math.round(organiza / 90) + '. Dos le confunden con el del gas.';
+      } else if (mio.acto === 'cena') {
+        txt = 'Cena de recaudación en ' + R[mio.ca].nombre + ': cubierto a 500 €, croquetas a temperatura ambiente y +' + mio.caja + ' de caja.';
+      } else {
+        txt = 'Baño de masas en ' + R[mio.ca].nombre + ': abrazos, selfis y un señor que no le suelta la mano. Ánimo +' + mio.animo + '.';
+      }
+      if (mio.foco) {
+        const F = D.FOCOS[mio.foco];
+        txt += ' ' + (mio.riesgoOk === false && F.cronicaMal ? F.cronicaMal : F.cronica);
+      }
+      noticia(S, 3, A.nombre + ' en ' + R[mio.ca].nombre, txt, yo);
+      Object.keys(mio.duelos || {}).forEach((q) => {
+        const gano = mio.duelos[q];
+        noticia(S, 14, 'Duelo en ' + R[mio.ca].nombre + ': ' + (gano ? 'le quitas el telediario a ' + P[q].candCorto : P[q].candCorto + ' te quita el telediario'),
+          gano ? 'Coincidís en la misma ciudad y las cámaras se van contigo. ' + P[q].candCorto + ' habla para un señor y su perro.'
+            : 'Coincidís en la misma ciudad y las cámaras se van con ' + P[q].candCorto + '. Tu mitin sale en el minuto 43, después del tiempo.', gano ? yo : q);
+      });
+    }
+    const otros = lista.filter((m) => m.rol === 'principal' && m.p !== yo);
+    if (otros.length) {
+      const top = otros.slice().sort((a, b) => b.g - a.g)[0];
+      noticia(S, 1.5 + top.g, 'La caravana de los demás',
+        otros.map((m) => P[m.p].candCorto + ' en ' + R[m.ca].nombre).join(', ') + '. ' + P[top.p].candCorto +
+        ' dice que llenó; la policía dice que cabían más.', top.p);
+    }
   }
 
   // ---------- Huelgas ----------
@@ -756,13 +1085,50 @@
   // ---------- Fin del día ----------
 
   function cerrarDia(S) {
+    const yo = S.jugador;
     const agendas = {};
+    const a = S.agenda || {};
+    const n2 = a.principal !== undefined ? a.secundario : destinoN2(S);
     JUG.forEach((p) => {
-      agendas[p] = p === S.jugador && !S.ia ? Object.assign({}, S.agenda) : agendaIA(S, p);
+      if (p === yo && !S.ia) agendas[p] = { principal: a.ca || a.principal || null, acto: a.acto || 'mitin', tactica: a.tactica || null, secundario: n2 };
+      else agendas[p] = (S.plan && S.plan.agendas[p]) || agendaIA(S, p);
     });
+    S.ultimo = null;
     if (S.dia !== CONFIG.DIA_REFLEXION) {
+      const destino = agendas[yo].principal;
+      if (!S.ia && destino) {
+        const coste = costeViaje(S, destino, agendas[yo].tactica);
+        if (coste) { S.met.caja = clamp(S.met.caja - coste, 0, 100); S.stats.aviones++; }
+        S.stats.quieto = destino === S.pos ? S.stats.quieto + 1 : 0;
+        S.stats.actos[agendas[yo].acto]++;
+        S.stats.visitadas[destino] = 1;
+      }
+      if (!S.ia && S.orden === 'recaudar') S.met.caja = clamp(S.met.caja + CONFIG.N2_CAJA, 0, 100);
+      const antes = {};
+      RIDS.forEach((c) => { antes[c] = Object.assign({}, S.reg[c].v); });
+      // Los sucesos del mapa con efecto «siempre» y las citas de las cartas.
+      (S.focos || []).forEach((f) => { if (D.FOCOS[f.tipo].siempre) aplicarEfectos(S, D.FOCOS[f.tipo].siempre, { ca: f.ca, obj: 'psoe' }); });
       const lista = resolverMitines(S, agendas);
+      const citas = [];
+      (S.citas || []).filter((x) => x.dia === S.dia).forEach((x) => {
+        const fui = destino === x.ca;
+        aplicarEfectos(S, fui ? x.ef : x.efNo, x.ctx);
+        const txt = fui ? x.res : x.resNo;
+        if (txt) noticia(S, 9, (fui ? 'Cumples: ' : 'Plantón: ') + x.nombre, txt, yo);
+        citas.push({ ca: x.ca, nombre: x.nombre, fui, txt });
+      });
       cronicaMitines(S, lista);
+      if (!S.ia && destino) S.pos = destino;
+      S.posIA = S.posIA || {};
+      JUG.forEach((p) => { if (p !== yo && agendas[p].principal) S.posIA[p] = agendas[p].principal; });
+      const mio = lista.find((m) => m.p === yo && m.rol === 'principal');
+      S.ultimo = {
+        dia: S.dia, acto: agendas[yo].acto, citas,
+        actos: lista.map((m) => ({ p: m.p, ca: m.ca, rol: m.rol, acto: m.acto, g: Math.round(m.real * 100) / 100 })),
+        duelos: mio ? mio.duelos : {}, riesgoOk: mio ? mio.riesgoOk : undefined, foco: mio ? mio.foco : null,
+        caja: mio ? mio.caja : 0, animo: mio ? mio.animo : 0, tactica: agendas[yo].tactica,
+        cambio: RIDS.map((c) => ({ ca: c, d: S.reg[c].v[yo] - antes[c][yo] })).filter((x) => Math.abs(x.d) >= 0.05),
+      };
     }
     S.campanas.forEach((c) => {
       aplicarEfectos(S, c.ef, c.ctx);
@@ -777,7 +1143,7 @@
     S.prog = S.prog.filter((x) => x.dia !== S.dia);
     resolverHuelgas(S);
     suceso(S);
-    S.agenda = { principal: null, secundario: null };
+    S.agenda = { ca: null, acto: 'mitin', tactica: null };
     if (S.dia === CONFIG.DIA_DEBATE) {
       iniciarDebate(S);
       S.fase = 'debate';
@@ -886,6 +1252,14 @@
       }));
     });
     S.debate = { ronda: 0, puntos: { psoe: 0, pp: 0, vox: 0, fa: 0 }, manos, log: [], jugadas: [], lider: lider(esc, JUG), esc };
+    // Las promesas cuentan: con demasiadas, te sacan la calculadora; con pocas, presumes de cuentas claras.
+    if (S.promesas >= CONFIG.PROMESAS_DEBATE) {
+      S.debate.puntos[S.jugador] = -1.5;
+      S.debate.nota = { signo: -1, txt: '🧮 Has prometido ' + formatoMillones(S.promesas) + '. Los tres rivales llevan calculadora: empiezas con −1,5.' };
+    } else if (S.promesas <= CONFIG.PROMESAS_CLARAS) {
+      S.debate.puntos[S.jugador] = 1;
+      S.debate.nota = { signo: 1, txt: '📒 Casi no has prometido nada (' + formatoMillones(S.promesas) + '). Presumes de cuentas claras: empiezas con +1.' };
+    }
   }
 
   function improvisadas() {
@@ -1079,8 +1453,11 @@
 
   function calcularFinal(S) {
     const antesEst = estimacion(S);
+    const castigo = clamp((S.promesas - CONFIG.PROMESAS_UMBRAL) / CONFIG.PROMESAS_DIV, 0, CONFIG.PROMESAS_MAX);
+    if (castigo > 0) movilizar(S, S.jugador, -castigo);
     TODOS.forEach((p) => { movilizar(S, p, normal(S) * CONFIG.MARGEN_ERROR); });
     const esc = escanos(S);
+    const recuento = construirRecuento(S, esc);
     const t = esc.total;
     const der = t.pp + t.vox;
     const izq = t.psoe + t.fa + t.otros;
@@ -1102,21 +1479,105 @@
       const miBloque = yo === 'vox' ? 'der' : 'izq';
       medalla = preside ? 'triunfo' : (gobierno === miBloque || t[yo] > t[socio]) ? 'victoria' : mejora ? 'digna' : 'debacle';
     }
-    S.final = { esc, gobierno, presidente, medalla, der, izq, estAntes: antesEst, est: estimacion(S), primera };
+    S.final = { esc, gobierno, presidente, medalla, der, izq, estAntes: antesEst, est: estimacion(S), primera, castigo: r1(castigo * 10) / 10, recuento };
     S.fase = 'final';
     return S.final;
+  }
+
+  // Escrutinio en directo: fotos del recuento al 6, 20, 40, 60, 80, 93 y 100 %. Las primeras mesas engañan.
+  function construirRecuento(S, final) {
+    const sesgo = {};
+    TODOS.forEach((p) => { sesgo[p] = normal(S) * 0.16; });
+    const orden = RIDS.slice().sort((a, b) => R[a].escanos - R[b].escanos);
+    const llega = {};
+    orden.forEach((c, i) => { llega[c] = 6 + Math.round(82 * Math.pow(i / (orden.length - 1), 1.5)); });
+    const pasos = [6, 20, 40, 60, 80, 93, 100].map((pct) => {
+      const falta = 1 - pct / 100;
+      const total = {}, lid = {};
+      TODOS.forEach((p) => { total[p] = 0; });
+      let escrutados = 0;
+      RIDS.forEach((c) => {
+        if (pct < llega[c]) return;
+        const v = {};
+        TODOS.forEach((p) => { v[p] = Math.max(0.1, S.reg[c].v[p] * (1 + (sesgo[p] + normal(S) * 0.12) * falta)); });
+        const e = pct >= 100 ? final.porRegion[c] : repartir(v, R[c].escanos);
+        TODOS.forEach((p) => { total[p] += e[p]; });
+        lid[c] = pct >= 100 ? lider(S.reg[c].v) : lider(v);
+        escrutados += R[c].escanos;
+      });
+      return { pct, total, lid, escrutados };
+    });
+    return pasos;
+  }
+
+  // ---------- Pistas legibles de una opción de carta ----------
+
+  function flechas(x, a, b) {
+    const n = Math.abs(x) < a ? 1 : Math.abs(x) < b ? 2 : 3;
+    return (x > 0 ? '↑↑↑' : '↓↓↓').slice(0, n);
+  }
+
+  function chipsEfectos(S, efs) {
+    const yo = S.jugador;
+    let mios = 0, rival = 0, bloques = false;
+    const met = { caja: 0, animo: 0, sospecha: 0 };
+    const out = [];
+    let promesa = 0, mano = null, extra = [];
+    (efs || []).forEach((e) => {
+      const k = e.ca ? 0.5 : 1;
+      if (e.mov) {
+        if (e.mov === 'yo' || e.mov === 'todos' || (e.mov === 'gob' && yo === 'psoe')) mios += e.n * k;
+        else rival += e.n * k;
+      }
+      if (e.tras) {
+        if (e.tras[1] === 'yo' || e.tras[1] === yo) { mios += e.n; rival -= e.n; }
+        else if (e.tras[0] === 'yo' || e.tras[0] === yo) { mios -= e.n; rival += e.n; }
+      }
+      if (e.bloque) bloques = true;
+      ['caja', 'animo', 'sospecha'].forEach((m) => { if (e[m]) met[m] += e[m]; });
+      if (e.promesa) promesa += e.promesa;
+      if (e.mano) mano = e.mano;
+      if (e.campana) extra.push({ txt: '📣 Campaña de ' + e.campana.dias + ' días', signo: 1 });
+      if (e.huelga) extra.push({ txt: '✊ Huelga en ' + e.huelga.en + ' días', signo: 0 });
+      if (e.cita) extra.push({ txt: '📌 Te compromete a ir hoy', signo: 0 });
+      if (e.sigue) extra.push({ txt: '⏳ Traerá cola', signo: 0 });
+      if (e.prog) extra.push({ txt: '⏳ Efecto en ' + e.prog.en + ' días', signo: 0 });
+    });
+    if (Math.abs(mios) >= 0.04) out.push({ txt: '🗳️ Tú ' + flechas(mios, 0.3, 0.65), signo: Math.sign(mios) });
+    if (Math.abs(rival) >= 0.04) out.push({ txt: 'Rival ' + flechas(rival, 0.3, 0.65), signo: -Math.sign(rival) });
+    if (bloques) out.push({ txt: '⚖️ Mueve bloques', signo: 0 });
+    if (met.caja) out.push({ txt: '💶 ' + (met.caja > 0 ? '+' : '−') + Math.abs(met.caja), signo: Math.sign(met.caja) });
+    if (met.animo) out.push({ txt: '🔥 ' + flechas(met.animo, 5, 10), signo: Math.sign(met.animo) });
+    if (met.sospecha) out.push({ txt: '🕵️ ' + flechas(met.sospecha, 7, 14), signo: -Math.sign(met.sospecha) });
+    if (promesa) out.push({ txt: '📜 +' + formatoMillones(promesa), signo: promesa >= 20000 ? -1 : 0 });
+    if (mano) {
+      const c = cartaMano(mano);
+      out.push({ txt: '🃏 ' + (c.clase === 'debate' ? 'Carta de debate' : c.clase === 'tactica' ? 'Carta táctica' : 'Carta de reflexión'), signo: 1 });
+    }
+    return out.concat(extra);
+  }
+
+  function resumenOpcion(S, op) {
+    const r = { fijo: chipsEfectos(S, op.ef), prob: null, bien: [], mal: [] };
+    if (op.azar != null) {
+      r.prob = Math.round(probAzar(S, op) * 100);
+      r.bien = chipsEfectos(S, op.si.ef);
+      r.mal = chipsEfectos(S, op.no.ef);
+    }
+    return r;
   }
 
   // ---------- Exportar ----------
 
   root.Motor = {
-    CONFIG, RONDAS, ORO, PERIODICOS, DER,
+    CONFIG, RONDAS, ORO, PERIODICOS, DER, CERCANIA,
     el, del, cap,
     nuevaPartida, prepararDia, empezarDia, cartaActual, elegirOpcion, siguienteCarta, puedeElegir, costeOpcion, pistas, probAzar,
     cerrarDia, pasarNoche, agendaIA, valorMitin, hastio,
     escanos, estimacion, nacional, liderRegion, lider, nombre, texto, fecha, formatoMillones, resumenEncuesta,
     manoDebate, jugarRonda, jugarOro, terminarDebate, cartaMano,
     opcionesReflexion, jugarReflexion, calcularFinal,
+    alcance, focoEn, citaEn, costeViaje, puedeIr, destinoN2, prever, umbral, escanosSi, usarTacticaYa, resumenOpcion, implantacion, info,
     rnd,
   };
 })(typeof window !== 'undefined' ? window : globalThis);

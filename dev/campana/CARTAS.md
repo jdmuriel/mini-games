@@ -9,8 +9,8 @@ Catálogo completo, siempre actualizado:
 node dev/tools/simular.js --catalogo
 ```
 
-Hoy: **92 cartas** (7 fijas, 3 encadenadas, 55 generales, 6 de bloque, 21 de partido), **14 sucesos**,
-**10 cartas de debate** y **6 de reflexión**.
+Hoy: **170 cartas** (`cartas.js` + `cartas2.js`), **14 sucesos**, **14 cartas de debate**, **6 de reflexión**
+y **12 tácticas** (`gira.js`).
 
 ## Formato
 
@@ -66,10 +66,30 @@ Quién: `yo`, `obj`, `ant` (antagonista), `gob` (PSOE), `gobca` (gobierno de la 
 (para vocativos: "¿De verdad, {OBJN}?"). `{CAND}`, `{OBJCAND}`, `{ANTCAND}`: apellido del candidato.
 `{CA}`: comunidad. `{GOBCA}`: "el gobierno autonómico del PP". `{OTROSCA}`: los "otros" de esa comunidad.
 
+### Novedades de la v0.2 (`cartas2.js`)
+
+| Campo / efecto | Qué hace |
+|----------------|----------|
+| `req: (i) => i.puesto === 1` | Carta **reactiva**: solo sale si se cumple la condición. `i` es `Motor.info(S)`: `puesto`, `delta`, `caja`, `animo`, `sospecha`, `promesas`, `quieto`, `aviones`, `actos`, `duelosG`, `duelosP`, `visitadas`, `orden`, `mano`, `dia`. Pesan ×2,5 en el mazo. |
+| `ca: 'pos'` | `{CA}` es la comunidad donde está tu candidato. |
+| `{ sigue: 'sf2', en: 3 }` | **Saga**: el capítulo siguiente llega dentro de 3 días. |
+| `{ cita: { nombre, icono, ef, efNo, res, resNo } }` | Compromiso de ir **hoy** a `{CA}`. Al cerrar el día se aplica `ef` si fuiste y `efNo` si no. |
+| `{ mano: 't_autobuses' }` | Da una carta táctica (ver `TACTICAS` en `gira.js`). |
+| `{ promesa: -30000 }` | Las promesas también se pueden retirar. |
+
+Familias nuevas: **platós** (La Revuelta, El Hormiguero, el youtuber salvaje, con sus resacas), **sagas**
+(el pendrive del Fontanero, la caja de galletas del Tesorero, la cuenta de Vane, el turno de Paco),
+**reactivas** (`r_*`), **citas** (`c_*`), las que dan **tácticas** (`tc_*`) y dos más por partido.
+
+Las cartas ya vistas en partidas anteriores pesan ×0,35 (se guardan las últimas 110 en `localStorage`).
+Si no puedes pagar ninguna de las dos opciones de una carta, se permite la más barata.
+
 ## Guía de tono
 
 - **Humor negro y mala baba contra los políticos, nunca contra las víctimas.** Se puede reír del candidato
   que llega a la riada con botas nuevas; no de la riada. Lo mismo con migrantes, enfermos o fallecidos.
+- **Tragedias reales, fuera.** No hay carta del accidente ferroviario de Adamuz ni de ninguna otra tragedia
+  con víctimas. Los trenes salen como retrasos y averías (`tren`, `tren_psoe`, suceso del mapa `trenes`).
 - **Sin nombres propios en las bromas fuertes.** Los candidatos solo aparecen como `{CAND}`/`{OBJCAND}`
   y en situaciones inventadas e inofensivas (caerse, cocinar, bailar). Los casos judiciales reales se citan
   como los cuenta la prensa, sin inventar hechos ni delitos.
@@ -107,9 +127,6 @@ Sin decisión, para los partidos de la IA. Deben sumar cero: la suma de los posi
 
 ## Ideas de cartas pendientes
 
-- Debate en lenguas cooficiales con pinganillo que falla.
-- Cumbre Iberoamericana (4-5 de noviembre, Milei no confirma).
-- Fact-checkers: un bulo tuyo desmentido al día siguiente (carta encadenada).
-- El voto CERA (españoles en el extranjero) que no llega a tiempo.
-- Eurovisión / fútbol: final de Champions la noche del debate.
+- Cumbre Iberoamericana.
 - Una carta por partido de "buena noticia" de gestión autonómica.
+- Más sagas: la periodista de investigación, el juez, el nº2 que quiere tu puesto.

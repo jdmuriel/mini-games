@@ -32,6 +32,17 @@ Añadir aquí cada noticia nueva antes de convertirla en carta, con fuente y fec
 | 2025 | Gran apagón del 28 de abril. | `apagon` | (prensa nacional, 2025) |
 | 2024-25 | DANA de Valencia y la gestión del gobierno autonómico. | `gota_fria` (genérica, sin nombres) | (prensa nacional) |
 
+## Noviembre: los platós
+
+| Fecha | Noticia | Carta | Fuente |
+|-------|---------|-------|--------|
+| 9-nov | **Abascal en La Revuelta**: 96 minutos, 4,8 millones de espectadores y 33,6 % de cuota, récord del programa. Momento tenso («no has tenido huevos…») y disculpa de Broncano por el tono. TVE invitó a todos los candidatos; Feijóo no fue. | `revuelta`, `revuelta_resaca`, `vox_tele_publica` | [Infobae](https://www.infobae.com/espana/2026/11/09/ocho-momentos-clave-de-santiago-abascal-en-la-revuelta-con-david-broncano-del-nuestro-publico-te-hubiera-abuchado-al-no-has-tenido-huevos/), [Ara](https://es.ara.cat/politica/no-has-tenido-huevos-denunciar-genocidio-israel-broncano-abascal-enganchan-revuelta_1_5905690.html), [Vozpópuli](https://www.vozpopuli.com/television/abascal-logra-record-de-audiencia-en-la-revuelta-y-supera-a-sanchez-en-todas-las-comparativas.html) |
+| 9-nov | Abascal: «A El Hormiguero no me invitan. Su público será del PP». | `hormiguero_puerta` | [Lecturas](https://www.lecturas.com/television/pulla-santiago-abascal-pablo-motos-hormiguero-no-me-invitan-ese-publico-sera-partido-popular_201066) |
+| 11-nov | **Feijóo en El Hormiguero**. Motos: «Llamé a los dos y uno ha decidido no venir» (Sánchez). Críticas por entrevista blanda. | `hormiguero` | [elDiario.es](https://eldiario.es/vertele/noticias/pablo-motos-presenta-feijoo-hormiguero-cargando-pedro-sanchez-decidido-no-venir_1_13657700.html), [El Debate](https://www.eldebate.com/cine-tv-series/20261112/pablo-motos-no-habla-trancas-barrancas-corta-feijoo-entrevista-como-hizo-broncano-abascal_479944.html), [El Nacional](https://www.elnacional.cat/enblau/es/television/entrevista-pablo-motos-alberto-nunez-feijoo-hormiguero-wild-abascal-revuelta-pp-candidato_1724219_102.html) |
+| 13-nov | **Jordi Wild** (*The Wild Project*) publica sus entrevistas largas a los candidatos. «La más dura será con Pedro Sánchez». Feijóo: «No sé inglés, pero sé gobernar». Las fuentes no coinciden en si Abascal acabó yendo. | `youtuber`, `youtuber_clip`, `pp_ingles` | [El Español](https://www.elespanol.com/espana/politica/20261113/vea-entrevistas-completas-jordi-wild-sanchez-feijoo-colau/1003744457089_0.html), [Ara](https://en.ara.cat/politics/jordi-wild-puts-to-the-test-the-future-president-of-spain_1_5908994.html), [Demócrata](https://www.democrata.es/elecciones-generales-espana/jordi-wild-entrevistas-candidatos/), [Vozpópuli](https://www.vozpopuli.com/actualidad/jordi-wild-busca-su-proximo-video-de-13-millones-de-visitas-los-candidatos-del-29-n-se-enfrentan-al-liston-que-dejaron-perez-reverte-topuria-charlie-sheen-y-sus-invitados-mas-seguidos.html) |
+
+En el juego el youtuber no lleva nombre: es «el youtuber salvaje».
+
 ## Temas de campaña (para cartas futuras)
 
 - **Vivienda**: decretos tumbados, alquileres, desahucios, okupas, "un piso por cada joven".
@@ -40,7 +51,8 @@ Añadir aquí cada noticia nueva antes de convertirla en carta, con fuente y fec
   contra los migrantes.
 - **Salarios y SMI**, pensiones, reducción de jornada.
 - **Política exterior**: Milei, Trump y aranceles, gasto en la OTAN, Orbán.
-- **Trenes**: retrasos, Rodalies, accidentes. Humor sobre la espera, nunca sobre víctimas.
+- **Trenes**: retrasos, Rodalies, averías en las vías. Humor sobre la espera. **Nada sobre accidentes con
+  víctimas** (decisión expresa: no hay carta del choque de Adamuz).
 - **Unidad de la izquierda**: Frente Amplio contra Podemos.
 - **Voto por correo**: colapso de Correos, campaña "No votes por correo".
 - **Encuestas**: el CIS de Tezanos, la prensa andorrana y la prohibición de los últimos cinco días.

@@ -6,7 +6,8 @@ Colección de mini juegos estáticos (HTML + CSS + JavaScript) publicados en Git
 
 - **Wordle** (`wordle/`): adivina la palabra de 5 letras en 6 intentos. Palabra del día y modo libre.
 - **Campaña 29-N** (`elecciones/`): simulador satírico de las elecciones generales del 29-N. 21 días de
-  campaña, mítines por comunidades, cartas de evento al estilo *Reigns*, debate y noche electoral.
+  campaña, una caravana que recorre el mapa a la caza de escaños, 170 cartas de evento al estilo *Reigns*,
+  debate y escrutinio en directo.
   Diseño y estado en `dev/campana/`.
 
 ## Estructura

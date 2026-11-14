@@ -88,7 +88,7 @@ precampaña; mecánicamente todos los días son iguales salvo los marcados.
 1. **Portada** del periódico del día: titular con lo más gordo de ayer, mapa, hemiciclo, encuesta y breves
    (mítines de los rivales, sucesos, resultados de tus cartas).
 2. **Cartas del día**: 2 cartas. Cada una tiene dos opciones (deslizar a izquierda/derecha o pulsar).
-3. **Agenda**: eliges la comunidad del **mitin principal** (candidato) y la del **secundario** (nº2).
+3. **La gira**: mueves la caravana del candidato y eliges qué hace allí (ver §5).
 4. **Cerrar el día**: los rivales eligen sus mítines a la vez que tú, se resuelve todo y pasa la noche.
 
 ## 4. El modelo electoral
@@ -147,31 +147,85 @@ Motivo (descubierto con el simulador): con reparto proporcional, dar los **mismo
 beneficia al pequeño, porque sus escaños crecen en proporción. Sin esta escala, FA y Vox ganaban ~10
 escaños solo con estar en la partida.
 
-## 5. Mítines
+## 5. La gira (v0.2)
 
-Cada día cada partido da **2 mítines**: el **principal** (candidato) y el **secundario** (nº2).
+La agenda de la v0.1 (dos mítines donde quisieras) se jugaba en 6 de las 19 comunidades y siempre igual.
+La v0.2 la sustituye por **la gira**: una decisión al día, pero con más cosas que mirar.
 
-**Ganancia de un mitin** (puntos del electorado de esa comunidad):
+### Caravana
+
+Tu candidato está físicamente en una comunidad (empieza en Madrid). Cada día:
+
+- quedarse o ir a una **vecina** (`data/gira.js`, `VECINAS`; los ferris cuentan: Baleares con Valencia y
+  Cataluña, Ceuta y Melilla con Andalucía): gratis;
+- ir a cualquier otra: **avión, 12 de Caja** (`CONFIG.AVION`). Canarias siempre es avión.
+
+Los rivales no pagan, pero su IA penaliza ×0,75 los saltos (`IA_CARAVANA`), así que también hacen rutas.
+
+### Tipos de acto
+
+| Acto | Puntos | Además |
+|------|--------|--------|
+| 🎤 Mitin | `G` (fórmula de abajo), de los **indecisos** | Sufre hastío y ruido; puede haber duelo. |
+| 🚪 Puerta a puerta | `0,55 × G` sin ruido, robados a los **vecinos ideológicos** | Útil cuando ya no quedan indecisos. |
+| 🍽️ Cena de recaudación | `0,2 × G` | Caja `+5 + 7 × implantación` (7 a 14). Sospecha +1. |
+| 🫂 Baño de masas | `0,35 × G` | Ánimo `+2 + 6 × implantación` (4 a 10). |
 
 ```
-G = 1,6 × rol × implantación × ánimo × hastío × ruido_mediático × cierre × azar
+G = 1,6 × cercanía × rol × implantación × ánimo × hastío × ruido_mediático × cierre × azar
 ```
 
 | Factor | Valor | Por qué |
 |--------|-------|---------|
-| `rol` | principal 1 · secundario 0,5 · secundario en la misma comunidad que el principal: 0,25 | El candidato tira más; dos mítines propios en el mismo sitio se pisan. |
-| `implantación` | voto decidido local del partido / 25 %, entre 0,3 y 1,3 | Moviliza más quien ya tiene mucha gente allí: no es lo mismo Vox en Murcia que en Euskadi. Es proporcional para no favorecer a nadie (ver la escala por tamaño en §4). |
-| `ánimo` | 0,6 + 0,8 × Ánimo/100 (solo jugador; la IA usa 1) | Unas bases desanimadas no llenan plazas. |
-| `hastío` | 1 − 0,35 × (mítines propios en esa comunidad en los 3 días anteriores; secundario cuenta 0,5). Mínimo −0,4 | Repetir aburre; a partir del 4º seguido, **resta**. |
-| `ruido mediático` | 1 / (1 + 0,3 × mítines rivales ese día en esa comunidad) | Si todos van al mismo sitio, nadie sale en la tele. |
-| `cierre` | ×1,8 el día 20 | El último mitin es el que se recuerda. |
-| `azar` | 0,8 – 1,2 | "8.000 asistentes según la organización, 800 según la policía". |
+| `cercanía` | `(censo medio / censo)^0,5`, entre 0,5 y 2 | **Nuevo.** Un acto llega a un número parecido de personas en cualquier sitio, así que mueve más puntos en La Rioja que en Andalucía. Sin esto, una comunidad grande valía 15 veces más que una pequeña; ahora, unas 3. |
+| `rol` | candidato 1 · nº2 0,5 (0,25 si coincide con el candidato) | |
+| `implantación` | voto decidido local / 25 %, entre 0,3 y 1,3 | Moviliza más quien ya tiene gente allí. |
+| `ánimo` | 0,6 + 0,8 × Ánimo/100 (solo jugador) | |
+| `hastío` | 1 − 0,35 × visitas propias en los 3 días anteriores (cena, baño y nº2 cuentan 0,5). Mínimo −0,4 | |
+| `ruido mediático` | 1 / (1 + 0,3 × mítines rivales ese día allí) | |
+| `cierre` | ×1,8 el día 20 | |
+| `azar` | 0,8 – 1,2 | |
 
-**De dónde salen los votos**: de los **indecisos** de la comunidad. Los mítines movilizan; robar votos a
-otros partidos es cosa de las cartas y del debate (trasvases).
+### Escaños en juego
 
-> Se probó que el 30 % se robara a los vecinos ideológicos (`CONFIG.DE_INDECISOS = 0,7`), pero el PP, que
-> está en medio y es grande, se desangraba hacia Vox y PSOE en todas las partidas. Queda desactivado.
+`Motor.umbral(S, c)` calcula cuántos puntos faltan para el siguiente escaño y cuántos separan de perder uno.
+El mapa marca ▲ donde el mejor acto de hoy alcanza el siguiente escaño y ▼ donde se pierde uno con 0,4
+puntos. Cada botón de acto enseña su previsión (`Motor.prever`): puntos y escaños que daría.
+
+### Sucesos del mapa
+
+Cada mañana aparecen **2** (`FOCOS`): fiestas (mitin ×1,6), mercado (puerta ×1,7), tele autonómica (todo
+×1,4 y sin ruido), fábrica que cierra (puerta ×2, la cena castiga), derbi (mitin ×0,4, la cena recauda el
+doble), tractorada (mitin con riesgo), **trenes parados por una avería en las vías** (solo se llega en
+avión; el Gobierno pierde 0,5 allí y quien vaya gana 0,6), temporal, congreso regional y semana de la
+universidad. Solo afectan al jugador, salvo los efectos «siempre».
+
+Las cartas pueden crear una **cita** (`{cita: …}`): un compromiso de ir *hoy* a una comunidad. Ir da el
+premio; el plantón se paga.
+
+### Rivales legibles y duelos
+
+Los rivales fijan su agenda por la mañana (`S.plan`) y se **filtra** la de uno (50 %: de dos). Si tu mitin
+coincide con el mitin principal de un rival hay **duelo por la tele**: `ánimo × azar(0,6–1,4) × táctica`
+contra `azar(0,6–1,4)`. El que gana rinde ×1,35 y no sufre el ruido del otro; el que pierde, ×0,6. No
+depende del tamaño del partido (regla de simetría).
+
+### El nº2
+
+Ya no se coloca a mano: cumple una **orden permanente**. *Al ataque* (donde más rinda un mitin), *cuidar
+feudos* (donde tus votantes se enfrían) o *pasar la gorra* (sin mitin, +3 de Caja al día).
+
+### Cartas tácticas
+
+Tercera clase de carta de mano (`TACTICAS`, ids `t_*`), junto a las de debate y reflexión. Se juega una al
+día sobre el acto del candidato: autobuses (mitin ×1,5), telonero, lona (+0,5 fijo), jet (vuelo gratis),
+contraprogramación, barón (sin hastío), drones, paella, topo (enseña todas las agendas), mecenas, megáfono,
+conexión en directo. Se empieza con 2 al azar; el resto se consigue en las cartas. Mano máxima: 6.
+
+### Resolución del día
+
+Al cerrar, una pantalla enseña en el mapa dónde ha estado cada candidato y cuánto ha ganado, el resultado
+de duelos y citas, y el saldo en escaños del día (`S.ultimo`).
 
 ### Olvido (perder influencia)
 
@@ -221,8 +275,12 @@ Tres barras de 0 a 100 arriba de la pantalla. Las cartas muestran con puntos qu�
 
 Todos los partidos empiezan con los mismos valores (regla de simetría).
 
-Además se lleva la cuenta de las **promesas electorales** (en millones de euros). No tiene efecto
-mecánico; sale en la portada final: *"Has prometido 87.000 millones. El déficit te manda saludos."*
+Además se lleva la cuenta de las **promesas electorales** (en millones de euros), y desde la v0.2 **cuentan**:
+
+- Debate: con ≥ 80.000 M€ te sacan la calculadora (empiezas con −1,5 puntos); con ≤ 15.000 M€ presumes de
+  cuentas claras (+1).
+- Domingo: lo que pase de 50.000 M€ desmoviliza `(promesas − 50.000) / 150.000` puntos, máximo 0,7.
+- Cartas reactivas: «Alguien ha hecho las cuentas», «El promesómetro», «El candidato que no promete».
 
 ## 7. Cartas de evento
 
@@ -338,6 +396,8 @@ intentar alguna también.
 
 ## 11. Noche electoral y final
 
+0. **Escrutinio en directo**: el recuento se enseña al 6, 20, 40, 60, 80, 93 y 100 %. Las comunidades
+   pequeñas llegan primero y las primeras mesas llevan sesgo, así que los escaños bailan.
 1. **Margen de error**: a cada partido se le aplica un ajuste nacional aleatorio (normal, σ = 0,8 puntos).
    La encuesta nunca acierta del todo.
 2. Escaños con los votos decididos.
@@ -397,7 +457,9 @@ elecciones/
   data/partidos.js     Partidos, candidatos, colores, IA, escenarios
   data/regiones.js     Comunidades: escaños, censo, voto 2023, gobierno autonómico
   data/mapa.js         Paths SVG (generado con dev/tools/build_map.py)
+  data/gira.js         Vecindades, tipos de acto, órdenes del nº2, sucesos del mapa y cartas tácticas
   data/cartas.js       Cartas de evento, sucesos, cartas de debate y de reflexión
+  data/cartas2.js      Cartas de la v0.2: platós, sagas, reactivas, citas y tácticas
   motor.js             Lógica pura (sin DOM): estado, mítines, efectos, IA, escaños, debate, final
   ui.js                Pantallas y eventos
 dev/tools/simular.js   Simula cientos de partidas IA contra IA para equilibrar números
@@ -409,22 +471,20 @@ aleatorio con semilla guardada en el estado, así el simulador de Node puede car
 ## 15. Equilibrio (resultados del simulador)
 
 `node dev/tools/simular.js -n 40 --jugador <política> [--cartas oraculo]`, 40 partidas por partido y escenario.
-Δ = escaños finales del jugador menos los del inicio.
+Δ = escaños finales del jugador menos los del inicio. Datos de la v0.2:
 
 | Jugador | PSOE | PP | Vox | FA |
 |---------|-----:|---:|----:|---:|
-| Mítines al azar, cartas al azar | −4 a −7 | −6 a −9 | −2 | +1 a +3 |
-| Mítines como la IA, cartas al azar | +4 | −1 a +2 | +5 a +6 | +4 a +5 |
-| Mítines "listos", cartas con oráculo | +16 | +12 | +16 a +19 | +12 |
+| Candidato quieto, cartas al azar | −3 a −5 | −1 a −6 | −3 a −4 | +3 |
+| Comunidad y acto al azar, cartas al azar | −3 | −2 a +1 | +1 a +2 | +2 a +4 |
+| Solo mítines donde más rinden, cartas al azar | +3 | +1 a +6 | +4 a +5 | +4 a +5 |
+| Mejor comunidad, acto y táctica; cartas con oráculo | +15 | +17 a +19 | +16 a +17 | +12 |
 
-- Jugar bien frente a jugar mal: unos **20-25 escaños**. Los mítines bien elegidos valen ~10 y las cartas ~10.
-- Escenario independiente: PP+Vox empieza con ~180. Un PSOE que juega bien gobierna en ~85 % de partidas;
-  uno que juega al azar, nunca. El PP gobierna en el 55 % jugando al azar y siempre jugando bien.
-- Escenario CIS: la derecha empieza con ~140 y no llega a 176 ni jugando con oráculo. Es el modo difícil
-  (o imposible) para PP y Vox; su objetivo realista es la medalla de plata.
-- Nadie llega al escándalo eligiendo al azar; hace falta jugar sucio a menudo (5-8 opciones turbias).
-- Sin el jugador, los partidos de la IA se mantienen cerca de la encuesta inicial (±4 escaños), salvo
-  "Otros", que pierde ~5 porque no hace campaña.
+- Jugar bien frente a jugar mal sigue valiendo unos **20 escaños**.
+- El jugador «listo» pisa 6-8 comunidades y coge 3-9 aviones; una persona, que mira sucesos y escaños a
+  tiro, pisa 8-11 (partidas de prueba con Playwright).
+- FA sube un poco incluso sin hacer nada (pendiente de mirar).
+- Escenario CIS: la derecha sigue sin llegar a 176.
 
 ## 16. Ideas para más adelante
 

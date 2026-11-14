@@ -3,13 +3,13 @@
 //
 //   node dev/tools/simular.js --inicio              Escaños de partida de cada escenario
 //   node dev/tools/simular.js --catalogo            Tabla Markdown con todas las cartas
-//   node dev/tools/simular.js [-n 200] [--jugador listo|ia|azar|quieto] [--cartas azar|oraculo]
+//   node dev/tools/simular.js [-n 200] [--jugador listo|mitinero|azar|quieto] [--cartas azar|oraculo]
 //
 // Políticas del jugador simulado:
-//   ia      usa el mismo algoritmo de agenda que los rivales
-//   listo   como ia, pero evita las comunidades donde fueron ayer los rivales y cierra en la mayor libre
-//   azar    mítines en comunidades al azar
-//   quieto  sin mítines (para medir cuánto valen)
+//   listo     elige la mejor combinación de comunidad, acto y carta táctica que pueda pagar
+//   mitinero  solo mítines, donde más rindan, sin tácticas
+//   azar      va a una comunidad al azar (de las que puede pagar) y da un mitin o hace puerta a puerta
+//   quieto    el candidato no hace nada (para medir cuánto vale la agenda)
 // Cartas: azar (opción al azar) u oraculo (prueba ambas opciones en una copia y se queda la mejor).
 'use strict';
 
@@ -21,7 +21,7 @@ const RAIZ = path.join(__dirname, '..', '..', 'elecciones');
 const ctx = { console, Math, Date, JSON };
 ctx.window = ctx;
 vm.createContext(ctx);
-['data/partidos.js', 'data/regiones.js', 'data/cartas.js', 'motor.js'].forEach((f) => {
+['data/partidos.js', 'data/regiones.js', 'data/gira.js', 'data/cartas.js', 'data/cartas2.js', 'motor.js'].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(RAIZ, f), 'utf8'), ctx, { filename: f });
 });
 const M = ctx.Motor;
@@ -31,7 +31,7 @@ const JUG = D.JUGABLES;
 const args = process.argv.slice(2);
 const opt = (k, def) => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : def; };
 const N = parseInt(opt('-n', '100'), 10);
-const POLITICA = opt('--jugador', 'ia');
+const POLITICA = opt('--jugador', 'mitinero');
 const CARTAS = opt('--cartas', 'azar');
 
 const clonar = (S) => JSON.parse(JSON.stringify(S));
@@ -52,24 +52,45 @@ function inicio() {
   });
 }
 
+// Valor en escaños de un acto: puntos previstos × escaños de la comunidad / voto decidido.
+function valorActo(S, c, acto, tactica) {
+  const pv = M.prever(S, c, acto, tactica);
+  const v = S.reg[c].v;
+  let val = D.REGIONES[c].escanos * pv.g / (100 - v.ind) * (acto === 'puerta' ? 1.5 : 1);
+  if (pv.riesgo) val *= 0.8;
+  val -= pv.coste * 0.012;
+  if (acto === 'cena') val += pv.caja * (S.met.caja < 25 ? 0.03 : 0.004);
+  if (acto === 'masas') val += pv.animo * (S.met.animo < 45 ? 0.03 : 0.006);
+  return val;
+}
+
 function agendaJugador(S) {
-  const yo = S.jugador;
-  if (POLITICA === 'quieto') return { principal: null, secundario: null };
+  const ids = Object.keys(D.REGIONES);
+  const cita = (S.citas || []).find((x) => x.dia === S.dia);
+  if (POLITICA === 'quieto') return { ca: null, acto: 'mitin', tactica: null };
   if (POLITICA === 'azar') {
-    const ids = Object.keys(D.REGIONES);
-    return { principal: ids[Math.floor(azar() * ids.length)], secundario: ids[Math.floor(azar() * ids.length)] };
+    const pos = ids.filter((c) => M.puedeIr(S, c));
+    return { ca: pos[Math.floor(azar() * pos.length)], acto: azar() < 0.7 ? 'mitin' : 'puerta', tactica: null };
   }
-  if (POLITICA === 'listo') {
-    const ayer = new Set(S.mitines.filter((m) => m.dia === S.dia - 1 && m.p !== yo).map((m) => m.ca));
-    const val = Object.keys(D.REGIONES).map((c) => {
-      let v = M.valorMitin(S, yo, c);
-      if (ayer.has(c)) v *= 0.7;
-      if (S.dia === M.CONFIG.DIA_CIERRE) v *= 1 + D.REGIONES[c].escanos / 60;
-      return [c, v];
-    }).sort((a, b) => b[1] - a[1]);
-    return { principal: val[0][0], secundario: val[1][0] };
+  if (POLITICA === 'mitinero') { // solo mítines, sin tácticas: lo más parecido a la v0.1
+    const val = ids.filter((c) => M.puedeIr(S, c)).map((c) => [c, valorActo(S, c, 'mitin')]).sort((a, b) => b[1] - a[1]);
+    return { ca: val[0][0], acto: 'mitin', tactica: null };
   }
-  return M.agendaIA(S, yo);
+  // listo: mejor combinación de comunidad, acto y carta táctica
+  S.orden = S.met.caja < 12 ? 'recaudar' : (S.dia % 3 === 0 ? 'defender' : 'atacar');
+  const tacticas = [null].concat(S.mano.filter((id) => D.TACTICAS[id] && !D.TACTICAS[id].espia));
+  let mejor = null, mv = -Infinity;
+  ids.forEach((c) => {
+    D.ORDEN_ACTOS.forEach((acto) => {
+      tacticas.forEach((t) => {
+        if (!M.puedeIr(S, c, t)) return;
+        let v = valorActo(S, c, acto, t) - (t ? 0.12 : 0);
+        if (cita && cita.ca === c) v += 0.5;
+        if (v > mv) { mv = v; mejor = { ca: c, acto, tactica: t }; }
+      });
+    });
+  });
+  return mejor;
 }
 
 function elegirCarta(S) {
@@ -129,7 +150,7 @@ function informe() {
     JUG.forEach((yo) => {
       const medallas = { triunfo: 0, victoria: 0, digna: 0, debacle: 0 };
       const gob = { der: 0, izq: 0, bloqueo: 0 };
-      let delta = 0, final = 0, escandalos = 0, promesas = 0, ind = 0;
+      let delta = 0, final = 0, escandalos = 0, promesas = 0, ind = 0, caja = 0, visit = 0, aviones = 0;
       const media = {};
       JUG.concat(['otros']).forEach((p) => { media[p] = 0; });
       for (let i = 0; i < N; i++) {
@@ -139,7 +160,7 @@ function informe() {
         delta += (S.final.esc.total[yo] - S.escInicio[yo]) / N;
         final += S.final.esc.total[yo] / N;
         escandalos += stats.escandalos / N;
-        promesas += S.promesas / N;
+        promesas += S.promesas / N; caja += S.met.caja / N; visit += Object.keys(S.stats.visitadas).length / N; aviones += S.stats.aviones / N;
         ind += S.final.est.ind / N;
         Object.keys(media).forEach((p) => { media[p] += S.final.esc.total[p] / N; });
       }
@@ -147,7 +168,7 @@ function informe() {
       console.log(yo.padEnd(5), 'escaños', final.toFixed(1).padStart(6), '(Δ', (delta >= 0 ? '+' : '') + delta.toFixed(1) + ')',
         '| 🏆', pct(medallas.triunfo), '🥇', pct(medallas.victoria), '🥈', pct(medallas.digna), '💀', pct(medallas.debacle),
         '| gob der', pct(gob.der), 'izq', pct(gob.izq), 'bloq', pct(gob.bloqueo),
-        '| escánd', escandalos.toFixed(2), '| indec', ind.toFixed(1));
+        '| escánd', escandalos.toFixed(2), '| indec', ind.toFixed(1), '| caja', caja.toFixed(0), 'CCAA', visit.toFixed(1), 'vuelos', aviones.toFixed(1), 'prom', Math.round(promesas / 1000) + 'k');
       console.log('      media final:', Object.keys(media).map((p) => p + ' ' + media[p].toFixed(1)).join('  '));
     });
   });
